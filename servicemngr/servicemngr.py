@@ -12,10 +12,7 @@ __author__ = "Konstantin Rolf"
 __copyright__ = "Copyright 2020, ALLTHEWAYAPP LTD"
 __credits__ = []
 
-__license__ = """ Copyright (C) ALLTHEWAYAPP, LTD - All Rights Reserved
-Unauthorized copying of this file, via any medium is strictly prohibited
-Proprietary and confidential.
-Written by Konstantin Rolf <konstantin.rolf@gmail.com>, January 2021 """
+__license__ = """ MIT """
 
 __version__ = "0.0.1"
 __maintainer__ = "Konstantin Rolf"
