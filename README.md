@@ -1,1 +1,29 @@
 # Service Manager Package
+
+```json
+{
+    "services": [
+        {
+            "name": "File Server",
+            "exec": "python file_server.py",
+            "dir": "./",
+            "args": [
+                "--host localhost",
+                "--port 8081",
+            ]
+        },
+        {
+            "name": "Model Server",
+            "exec": "python model_server.py",
+            "dir": "./",
+            "args": [
+                "--host localhost",
+                "--port 8082",
+                "--logdir logs",
+                "--loglevel DEBUG",
+                "--logfile model_server.log"
+            ]
+        }
+    ]
+}
+```
