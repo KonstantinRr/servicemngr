@@ -19,104 +19,117 @@ __maintainer__ = "Konstantin Rolf"
 __email__ = "konstantin.rolf@gmail.com"
 __status__ = "Prototype"
 
+# package imports #
+from args import *
+from logger import *
+
+# system imports #
 import sys
 import json
-import logging
 import argparse
-
 
 from subprocess import Popen, PIPE
 from time import sleep
 
-from logutils.logger import addLogArgs, createLoggerFromArgs
-from logutils.arg import argReplaceCheck
-    
-def hello():
-    parent_parser = argparse.ArgumentParser(add_help=False)                                                                                                  
-    parent_parser.add_argument('--user', '-u', default=getpass.getuser(), help='username')                                                                                                                     
-    parent_parser.add_argument('--debug', default=False, required=False, action='store_true', dest="debug", help='debug flag')
-    
-    main_parser = argparse.ArgumentParser()                                                                                                                  
-    service_subparsers = main_parser.add_subparsers(title="service", dest="service_command")                                                                                                              
-    service_parser = service_subparsers.add_parser("first", help="first", parents=[parent_parser])                                                                                                             
-    action_subparser = service_parser.add_subparsers(title="action", dest="action_command")                                                                                                               
-    action_parser = action_subparser.add_parser("second", help="second", parents=[parent_parser])                                                                                                             
-
 class Service:
-    def __init__(self, args)
+    def __init__(self, name, delay, args, logger):
+        """ Creates a new service """
         self.startException = False
-        self.args
-    def startService(self):
-        """ Starts the given service using the given config.
+        self.delay = delay
+        self.name = name
+        self.args = args
+        self.logger = logger
+        self.service = None
 
-        Parameters
-        ----------
-        serviceInfo : dict
-            The configuration used to start up the service. See the config.json
-            for more information about the possible arguments.
-        """
+    def checkService(self):
+        """ Checks if all services are running and restarts them if neccessary """
+        if self.service is None:
+            # service is not running
+            self.startService()
+        else:
+            # service is currently running
+            r = self.service.poll()
+            if r is not None: # service exited with code r
+                self.service = None
+                self.logger.info('Service \'{}\' exited with code {}, trying to restart...'
+                    .format(self.name, r))
+                self.startService()
+    
+    def status(self):
+        return self.service is not None
+
+    def startService(self):
+        """ Starts the given service using the given config. """
         # we only want to start services once if there
         # already was an error just by starting the subprocess
-        if not self.startExceptions[idx]:
-            argsString = ' '.join(self.args[idx])
-            self.logger.info('Starting service {} with command \'{}\''
-                .format(idx, argsString))
+        if not self.startException:
+            argsString = ' '.join(self.args)
+            self.logger.info('Starting service \'{}\' with command \'{}\''
+                .format(self.name, argsString))
             try:
-                self.services[idx] = Popen(self.args[idx])
+                self.service = Popen(self.args)
             except Exception as e:
                 self.logger.error('Could not start {} with command \'{}\': Error {}'
-                    .format(serviceInfo['name'], argsString, e))
-                self.startExceptions[idx] = True
+                    .format(self.name, argsString, e))
+                self.service = None
+                self.startException = True
 
 class ServiceManager:
     """ A service manager class responsible for checking and managing a server process. """
 
-    SOURCE_PATH = 0
-    SOURCE_TEXT = 1
-    SOURCE_DICT = 2
+    LOG_NAME = 'ServiceSystem'
+    LOG_FILE = 'startup.log'
 
     @staticmethod
-    def addArgParserArguments(parser: argparse.ArgumentParser, useLogger:bool=True):
+    def fromArgs():
         parser = argparse.ArgumentParser()
         parser.add_argument('--file', type=str, default='config.json', 
             help='Location of the config file to load (default: \'config.json\').')
-        parser.add_argument('--string', type=str, default=None,
+        parser.add_argument('--source', type=str, default=None,
             help='Loads the config file as a string. This value cannot be used in combination'
             'with the config file argument.')
         parser.add_argument('--timing', type=int, default=5,
             help='Interval between service checks (default: 5 seconds).')
 
-        if useLogger:
-            addLogArgs(parser, 'startup.log', 'ServiceSystem')
+        addLoggerArguments(parser, ServiceManager.LOG_FILE, ServiceManager.LOG_NAME)
+        args = parser.parse_args()
+        logger = createLoggerFromArgs(args)
 
-    def __init__(self, source, tp:int, logger, timing:int=1):
-        """ Creates a service manager using the given config dictionary.
-        See the given config.json file for more information about the possible arguments.
+        if args.source is not None:
+            return ServiceManager.fromText(args.source, logger)
+        elif args.file is not None:
+            return ServiceManager.fromPath(args.file, logger)
+        else:
+            raise Exception('Unknown source object')
 
-        Parameters
-        ----------
-        source
-            The source that is used to load the config which is then used to
-            start up the services. The value may be a [path], [text] or [dict]
-            depending on the value of the tp argument
-        tp : int
-            The type of the source. This value must be SOURCE_PATH, SOURCE_TEXT
-            or SOURCE_DICT.
-        logger :
-            The logger used to log 
-        """
-        self.timing = timing
-        self.logger = logger
-        if tp == SOURCE_PATH:
-            self.loadConfigFromPath(source)
-        elif tp == SOURCE_TEXT:
-            self.loadConfigFromString(source)
+    @staticmethod
+    def fromPath(path:str, logger):
+        servicemngr = ServiceManager(logger)
+        servicemngr.loadConfigFromPath(path)
+        return servicemngr
 
-    def loadConfigFromPath(self, data:str):
+    @staticmethod
+    def fromText(text:str, logger):
+        servicemngr = ServiceManager(logger)
+        servicemngr.loadConfigFromString(text)
+        return servicemngr
+
+    @staticmethod
+    def fromDict(data:dict, logger):
+        servicemngr = ServiceManager(logger)
+        servicemngr.loadConfigFromDict(data)
+        return servicemngr
+
+    def __init__(self, logger):
+        self.timing = 5
+        self.logger = logger if logger is not None else createDefaultLogger(
+            ServiceManager.LOG_FILE, ServiceManager.LOG_NAME)
+
+    def loadConfigFromPath(self, path:str):
         """ Loads a config file from a path. """
         try:
             data = None
-            with open(args.config, 'r') as cfg:
+            with open(path, 'r') as cfg:
                 data = cfg.read()
         except Exception as e:
             self.logger.error('Could not load config file {}'.format(e))
@@ -126,7 +139,7 @@ class ServiceManager:
     def loadConfigFromString(self, data:str):
         """ Loads a config file from a source string. """
         try:
-            dictData = json.load(data)
+            dictData = json.loads(data)
         except Exception as e:
             self.logger.error('Could not parse config string {}'.format(e))
             raise
@@ -145,6 +158,40 @@ class ServiceManager:
                 ('exec', str, True), ('dir', str, False, './')
             ]
 
+            validator = DictValidator(
+                TypeValidator(str),
+                ListValidator(
+                    DictValidator(
+                        keyValidator=TypeValidator(str),
+                        valueValidator=PassValidator(),
+                        tupleValidator=AnyValidator([
+                            TupleValidator([
+                                ValueValidator('name'),
+                                TypeValidator(str)
+                            ]),
+                            TupleValidator([
+                                ValueValidator('args'),
+                                ListValidator(TypeValidator(str))
+                            ]),
+                            TupleValidator([
+                                ValueValidator('exec'),
+                                TypeValidator(str)
+                            ]),
+                            TupleValidator([
+                                ValueValidator('dir'),
+                                TypeValidator(str)
+                            ]),
+                        ])
+                    )
+                )
+            )
+
+
+            result = validator.validate(data)
+            
+            print(json.dumps(result, indent=4))
+            
+            '''
             # checks if the base dictionary satisfy the conditions
             baseCheck = argReplaceCheck(data, checks)
             if baseCheck is not None: # a check failed
@@ -159,23 +206,14 @@ class ServiceManager:
                 for arg in service['args']:
                     if not isinstance(arg, str):
                         raise AttributeError('Could not satisfy check: Arg elements must be str')
+            '''
         except Exception as e:
             self.logger.error('Could not parse config file!\n{}'.format(e))
             raise
 
         # ==== All checks were done successfully ==== #
-        self.serviceCount = len(data['services'])
-        self.services = [None] * self.serviceCount
-        self.startExceptions = [False] * self.serviceCount
-        self.args = [None] * self.serviceCount
-        # creates the commands used to start the services
-        for idx, service in enumerate(data['services']):
-            self.args[idx] = service['exec'].split(' ')
-            for arg in service['args']:
-                self.args[idx].extend(arg.split(' '))
-        
 
-
+        self.services = []
 
     def checkService(self):
         """ Checks all services if they are up and running.
@@ -187,21 +225,14 @@ class ServiceManager:
         data : dict
             The config that is used to (re)start services.
         """
-        for idx, info in enumerate(data['services']):
-            if self.services[idx] is not None:
-                r = self.services[idx].poll()
-                if r is not None:
-                    self.logger.info('Service {} exited with code {}, trying to restart...'.format(idx, r))
-                    self.startService(idx)
-            else:
-                self.startService(idx)
+        for service in self.services:
+            service.checkService()
     
     def info(self):
         """ Prints out status information to standard out. """
-        for index, info in enumerate(self.services): 
-            isUp = self.services[index] is None
+        for service in self.services:
             self.logger.info('Service {}:\t{}'.format(
-                index, 'UP' if isUp else 'DOWN'))
+                service.name, 'UP' if service.status() else 'DOWN'))
 
     def repeat(self, exitCondition):
         """ Runs the checkService function repeatedly with timing difference
@@ -218,12 +249,5 @@ class ServiceManager:
 
 
 if __name__ == "__main__":
-    args = parser.parse_args()
-    # creates a logger from the supplied arguments
-    
-
-    logger.info('Starting up ServerSystem...')
-    
-
-    mngr = ServiceManager(data, logger, timing=args.timing)
-    mngr.repeat()
+    servicemngr = ServiceManager.fromArgs()
+    servicemngr.repeat(None)

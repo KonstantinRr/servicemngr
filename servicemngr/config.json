@@ -14,6 +14,7 @@
             "exec": "python model_server.py",
             "dir": "./",
             "args": [
+                1,
                 "--host localhost",
                 "--port 8082",
                 "--logdir logs",
